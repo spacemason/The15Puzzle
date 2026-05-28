@@ -1,0 +1,23 @@
+{
+  "name": "@p15/server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --no-warnings src/index.ts",
+    "start": "tsx --no-warnings src/index.ts",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "@p15/shared": "*",
+    "bcryptjs": "^2.4.3",
+    "hono": "^4.6.10"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

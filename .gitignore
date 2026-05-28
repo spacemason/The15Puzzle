@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+
+# server runtime
+server/data.db
+server/data.db-journal
+server/uploads/*
+!server/uploads/.gitkeep
+
+# editor
+.vscode/
+.idea/
