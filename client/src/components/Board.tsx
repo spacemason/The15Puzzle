@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import type { Board as BoardT, PuzzleFull } from "@p15/shared";
 import { SIZE } from "@p15/shared";
+import { assetUrl } from "../api";
 
 interface Props {
   puzzle: PuzzleFull;
@@ -16,8 +17,8 @@ export function BoardView({ puzzle, board, size = 480, onTileClick, isSolved }: 
   const cellSize = (size - TILE_GAP * (SIZE + 1)) / SIZE;
   const style = puzzle.style ?? {};
 
-  const bgImg = puzzle.bgImageUrl;
-  const completeImg = puzzle.completeImageUrl;
+  const bgImg = assetUrl(puzzle.bgImageUrl);
+  const completeImg = assetUrl(puzzle.completeImageUrl);
 
   // Where the tile with value v currently sits (index in board array).
   const positions = new Map<number, number>();
@@ -27,7 +28,7 @@ export function BoardView({ puzzle, board, size = 480, onTileClick, isSolved }: 
   }
 
   const showNumbers = puzzle.showNumbers;
-  const tileImgs = puzzle.tileImageUrls ?? [];
+  const tileImgs = (puzzle.tileImageUrls ?? []).map((u) => assetUrl(u) ?? null);
   const hasAnyTileImage = tileImgs.some((u) => !!u);
 
   return (

@@ -8,8 +8,21 @@ import type {
   UserPublic,
 } from "@p15/shared";
 
+// Prefix a server path (e.g. "/api/foo" or "/uploads/x.png") with Vite's
+// BASE_URL so requests resolve correctly when the app is mounted under a
+// catalog prefix like "/the15puzzle/". Pass through absolute URLs.
+export function assetUrl(p: string | null | undefined): string | undefined {
+  if (!p) return undefined;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p) || p.startsWith("data:")) return p;
+  return import.meta.env.BASE_URL + p.replace(/^\/+/, "");
+}
+
+function apiUrl(path: string): string {
+  return import.meta.env.BASE_URL + path.replace(/^\/+/, "");
+}
+
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
+  const res = await fetch(apiUrl(url), {
     credentials: "same-origin",
     headers: { "content-type": "application/json", ...(init?.headers || {}) },
     ...init,
@@ -51,7 +64,7 @@ export const api = {
   getPuzzle: (id: number) => req<{ puzzle: PuzzleFull }>(`/api/puzzles/${id}`),
   regenerate: () => req<{ ok: true }>("/api/puzzles/regenerate", { method: "POST" }),
   createPuzzle: (form: FormData) =>
-    fetch("/api/puzzles", { method: "POST", body: form, credentials: "same-origin" }).then(
+    fetch(apiUrl("/api/puzzles"), { method: "POST", body: form, credentials: "same-origin" }).then(
       async (r) => {
         if (!r.ok) {
           const body = (await r.json().catch(() => ({}))) as { error?: string };
