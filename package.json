@@ -20,6 +20,7 @@
   },
   "game": {
     "type": "process",
+    "author": "Mason",
     "title": "The 15 Puzzle",
     "description": "Sliding-tile 15 puzzle with built-in scrambles, community puzzles, custom tile/board images, leaderboard, and an IDA* auto-solver.",
     "build": "npm run build",
