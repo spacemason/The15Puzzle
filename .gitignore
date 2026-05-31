@@ -6,8 +6,7 @@ dist/
 .DS_Store
 
 # server runtime
-server/data.db
-server/data.db-journal
+server/data.db*
 server/uploads/*
 !server/uploads/.gitkeep
 
