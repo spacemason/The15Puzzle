@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 import { ThemeToggle } from "./ThemeToggle";
+import { hubMode } from "../hubClient";
 
 export function Header() {
   const { user, logout } = useAuth();
@@ -15,15 +16,18 @@ export function Header() {
               Hi, <strong style={{ color: "var(--fg)" }}>{user.username}</strong>
             </span>
             <Link to="/create" className="btn btn-ghost">+ Create</Link>
-            <button
-              className="btn btn-ghost"
-              onClick={async () => {
-                await logout();
-                nav("/login");
-              }}
-            >
-              Log out
-            </button>
+            {/* In hub mode the injected menu owns account actions. */}
+            {!hubMode && (
+              <button
+                className="btn btn-ghost"
+                onClick={async () => {
+                  await logout();
+                  nav("/login");
+                }}
+              >
+                Log out
+              </button>
+            )}
           </>
         ) : null}
         <ThemeToggle />

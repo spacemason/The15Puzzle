@@ -7,6 +7,12 @@ import type {
   PuzzleSummary,
   UserPublic,
 } from "@p15/shared";
+import { hubMode, hubGetSave, hubPutSave, hubDeleteSave } from "./hubClient";
+
+// In hub mode, saved game state lives in the hub's per-game save store, one
+// slot per puzzle. Standalone keeps using this server's /api/active.
+const activeSlot = (puzzleId: number) => `active-${puzzleId}`;
+type ActiveData = { board: Board; moves: number; startedAt: number };
 
 // Prefix a server path (e.g. "/api/foo" or "/uploads/x.png") with Vite's
 // BASE_URL so requests resolve correctly when the app is mounted under a
@@ -74,15 +80,33 @@ export const api = {
       },
     ),
 
-  getActive: (puzzleId: number) =>
-    req<{ active: ActiveGame | null }>(`/api/active/${puzzleId}`),
-  putActive: (puzzleId: number, body: { board: Board; moves: number; startedAt: number }) =>
-    req<{ ok: true }>(`/api/active/${puzzleId}`, {
+  getActive: async (puzzleId: number): Promise<{ active: ActiveGame | null }> => {
+    if (hubMode) {
+      const { save } = await hubGetSave<ActiveData>(activeSlot(puzzleId));
+      if (!save) return { active: null };
+      return {
+        active: {
+          puzzleId,
+          board: save.data.board,
+          moves: save.data.moves,
+          startedAt: save.data.startedAt,
+          lastUpdated: save.updatedAt,
+        },
+      };
+    }
+    return req<{ active: ActiveGame | null }>(`/api/active/${puzzleId}`);
+  },
+  putActive: (puzzleId: number, body: ActiveData): Promise<{ ok: true }> => {
+    if (hubMode) return hubPutSave(activeSlot(puzzleId), body).then(() => ({ ok: true as const }));
+    return req<{ ok: true }>(`/api/active/${puzzleId}`, {
       method: "PUT",
       body: JSON.stringify(body),
-    }),
-  deleteActive: (puzzleId: number) =>
-    req<{ ok: true }>(`/api/active/${puzzleId}`, { method: "DELETE" }),
+    });
+  },
+  deleteActive: (puzzleId: number): Promise<{ ok: true }> => {
+    if (hubMode) return hubDeleteSave(activeSlot(puzzleId)).then(() => ({ ok: true as const }));
+    return req<{ ok: true }>(`/api/active/${puzzleId}`, { method: "DELETE" });
+  },
 
   recordSolve: (puzzleId: number, moves: number, durationMs: number) =>
     req<{ ok: true; alreadySolved: boolean; optimalMoves?: number }>("/api/solves", {

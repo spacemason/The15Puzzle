@@ -1,9 +1,12 @@
 import { Hono } from "hono";
-import { db } from "../db.js";
+import { db, HUB_MODE } from "../db.js";
 
 const app = new Hono();
 
 app.get("/", (c) => {
+  // In hub mode, drive-by guests create 0-solve mirror rows; hide them.
+  // Standalone keeps its original behavior (all users shown).
+  const having = HUB_MODE ? "HAVING solve_count > 0" : "";
   const rows = db
     .prepare(
       `SELECT u.id as user_id, u.username,
@@ -13,6 +16,7 @@ app.get("/", (c) => {
        FROM users u
        LEFT JOIN solves s ON s.user_id = u.id
        GROUP BY u.id
+       ${having}
        ORDER BY solve_count DESC, best_time_ms ASC
        LIMIT 50`,
     )

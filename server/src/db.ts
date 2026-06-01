@@ -69,6 +69,26 @@ CREATE TABLE IF NOT EXISTS active_games (
 );
 `);
 
+// Dual-mode: when running inside the diffenderfer-games host with the hub
+// available, HUB_URL points at the host's internal API. Absent => standalone,
+// and everything below behaves exactly as before.
+export const HUB_URL = process.env.HUB_URL ?? "";
+export const HUB_MODE = HUB_URL !== "";
+
+// Additive migration: a mirror of the hub's user id so hub identities map to
+// LOCAL user rows (never reusing the hub's id, which would collide with
+// standalone users). Only used in hub mode; ignored standalone. ADD COLUMN is
+// not idempotent, so guard on the current columns.
+{
+  const cols = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "hub_user_id")) {
+    db.exec("ALTER TABLE users ADD COLUMN hub_user_id TEXT");
+  }
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_hub ON users(hub_user_id) WHERE hub_user_id IS NOT NULL",
+  );
+}
+
 // Helper for transactions — node:sqlite has no built-in wrapper.
 export function tx<T>(fn: () => T): T {
   db.exec("BEGIN");

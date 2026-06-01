@@ -1,8 +1,33 @@
 import { Hono } from "hono";
-import { db } from "../db.js";
+import { db, HUB_MODE, HUB_URL } from "../db.js";
 import { requireUser } from "../auth.js";
 
 const app = new Hono();
+
+/**
+ * Mirror this user's aggregate to the shared hub leaderboards so the15puzzle
+ * appears on the catalog's cross-game view. Best-effort: never fails a solve.
+ * Authenticated as the hub user via the forwarded session cookie.
+ */
+async function feedHubBoards(cookie: string, userId: number): Promise<void> {
+  try {
+    const slug = process.env.GAME_SLUG || "the15puzzle";
+    const agg = db
+      .prepare("SELECT COUNT(*) AS n, MIN(duration_ms) AS best FROM solves WHERE user_id = ?")
+      .get(userId) as { n: number; best: number | null };
+    const post = (key: string, score: number, title: string, sort: "asc" | "desc") =>
+      fetch(`${HUB_URL}/_api/games/${slug}/leaderboards/${key}/scores`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify({ score, title, sort }),
+      });
+    await post("solves", agg.n, "Puzzles Solved", "desc");
+    // Submit best time in SECONDS (e.g. 14.138), not raw milliseconds.
+    if (agg.best != null) await post("besttime", agg.best / 1000, "Best Time", "asc");
+  } catch {
+    /* best-effort — the local solve already succeeded */
+  }
+}
 
 // POST /api/solves  — record a solve (idempotent; if already solved, returns existing)
 app.post("/", async (c) => {
@@ -44,6 +69,8 @@ app.post("/", async (c) => {
     user.id,
     puzzleId,
   );
+
+  if (HUB_MODE) await feedHubBoards(c.req.header("cookie") ?? "", user.id);
 
   return c.json({ ok: true, alreadySolved: false, optimalMoves: puzzle.optimal_moves });
 });

@@ -22,7 +22,12 @@
     "type": "process",
     "author": "Mason",
     "title": "The 15 Puzzle",
+    "menuPosition": "bottom-left",
     "description": "Sliding-tile 15 puzzle with built-in scrambles, community puzzles, custom tile/board images, leaderboard, and an IDA* auto-solver.",
+    "leaderboards": [
+      { "key": "solves", "title": "Puzzles Solved", "sort": "desc" },
+      { "key": "besttime", "title": "Best Time", "sort": "asc" }
+    ],
     "build": "npm run build",
     "start": "npm run start",
     "image": "cover.png"

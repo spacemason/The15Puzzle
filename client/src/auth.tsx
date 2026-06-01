@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import type { ReactNode } from "react";
 import type { UserPublic } from "@p15/shared";
 import { api } from "./api";
+import { hubMode, hubEnsureGuest } from "./hubClient";
 
 interface AuthCtx {
   user: UserPublic | null;
@@ -21,6 +22,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
+      // In hub mode, make sure a (guest) session exists before asking who we
+      // are — so the server's hub bridge can resolve it. The injected menu
+      // also does this, but doing it here removes the cold-load race.
+      if (hubMode) await hubEnsureGuest().catch(() => {});
       const { user } = await api.me();
       setUser(user);
     } catch {
