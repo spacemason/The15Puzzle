@@ -5,9 +5,52 @@ import type { Board, PuzzleFull } from "@p15/shared";
 import { applyMove, areAdjacent, findZero, isSolved, neighborForDirection, solve } from "@p15/shared";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { hub } from "../hub/hub";
 import { BoardView } from "../components/Board";
 import { GiveUpModal } from "../components/GiveUpModal";
 import { ParticleBurst } from "../components/ParticleBurst";
+
+// Declare the hub input system once for the whole app. This gives the puzzle
+// first-class keyboard + touch + gamepad support through one unified layer:
+//   - keys: arrows + WASD
+//   - gamepad: the d-pad buttons (12=up, 13=down, 14=left, 15=right)
+//   - touch: an on-screen d-pad (the virtual control below) whose four
+//     directions feed the same inputs via touch.stick
+// Reads are edge-triggered (`hub.input.down(name)`), so one press = one slide.
+let hubInputReady = false;
+function ensureHubInput() {
+  if (hubInputReady) return;
+  hubInputReady = true;
+  hub.input.define({
+    groups: {
+      play: {
+        inputs: {
+          up: {
+            keys: ["w", "arrowup"],
+            gamepad: { button: 12 },
+            touch: { stick: "dpad", axis: "y-" },
+          },
+          down: {
+            keys: ["s", "arrowdown"],
+            gamepad: { button: 13 },
+            touch: { stick: "dpad", axis: "y+" },
+          },
+          left: {
+            keys: ["a", "arrowleft"],
+            gamepad: { button: 14 },
+            touch: { stick: "dpad", axis: "x-" },
+          },
+          right: {
+            keys: ["d", "arrowright"],
+            gamepad: { button: 15 },
+            touch: { stick: "dpad", axis: "x+" },
+          },
+        },
+        virtual: [{ id: "dpad", type: "dpad", place: "bottom" }],
+      },
+    },
+  });
+}
 
 function fmtMs(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -129,23 +172,41 @@ export function PlayPage() {
     [board, moves, solvedAt, autoSolving, saveActive, startedAt, handleSolved],
   );
 
-  // Keyboard controls
+  // Directional controls via the hub input system (keyboard + touch + gamepad).
+  // A direction moves the blank that way, which is the same as sliding the
+  // adjacent tile — we resolve it through the existing neighbor/slide logic, so
+  // mouse/tap tile-clicking (BoardView onClick -> tryMove) keeps working too.
+  //
+  // We read edges off the hub's own per-frame state from our own rAF loop. The
+  // loop always reads the latest board/state + tryMove through a ref, so it
+  // doesn't need to be torn down and rebuilt on every state change.
+  const moveStateRef = useRef({ board, solvedAt, autoSolving, tryMove });
+  moveStateRef.current = { board, solvedAt, autoSolving, tryMove };
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!board || solvedAt != null || autoSolving) return;
-      let dir: "up" | "down" | "left" | "right" | null = null;
-      if (e.key === "ArrowUp" || e.key === "w") dir = "up";
-      else if (e.key === "ArrowDown" || e.key === "s") dir = "down";
-      else if (e.key === "ArrowLeft" || e.key === "a") dir = "left";
-      else if (e.key === "ArrowRight" || e.key === "d") dir = "right";
-      if (!dir) return;
-      e.preventDefault();
-      const target = neighborForDirection(board, dir);
-      if (target != null) tryMove(target);
+    ensureHubInput();
+    hub.input.enable("play");
+    let raf = 0;
+    const dirs = ["up", "down", "left", "right"] as const;
+    const loop = () => {
+      const { board: b, solvedAt: solved, autoSolving: solving, tryMove: move } =
+        moveStateRef.current;
+      if (b && solved == null && !solving) {
+        for (const dir of dirs) {
+          if (hub.input.down(dir)) {
+            const target = neighborForDirection(b, dir);
+            if (target != null) move(target);
+          }
+        }
+      }
+      raf = requestAnimationFrame(loop);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [board, solvedAt, autoSolving, tryMove]);
+    raf = requestAnimationFrame(loop);
+    return () => {
+      cancelAnimationFrame(raf);
+      hub.input.disable("play");
+    };
+  }, []);
 
   // Give up = run solver, animate the moves, mark as not-counted
   const beginAutoSolve = useCallback(async () => {
