@@ -208,6 +208,9 @@ export class InputSystem {
   private showVirtualOverride: boolean | null = null;    // user/menu toggle
   private menuNav: NavState | null = null;               // built-in nav over the hub menu
   private _selPrev = false; private _actPrev = false; private _backPrev = false;
+  private autoNavSel: (() => Array<HTMLElement | NavElement>) | null = null; // game's own menu (opt-in)
+  private autoNavState: NavState | null = null;
+  private autoNavBack: (() => void) | null = null;
 
   readonly touchDevice: boolean =
     typeof navigator !== 'undefined' && ((navigator as any).maxTouchPoints > 0 || 'ontouchstart' in window);
@@ -388,6 +391,14 @@ export class InputSystem {
       } else {
         this.legacyTick();
       }
+      // The game's own menus (opt-in via autoNavigate): when any are visible and
+      // a gamepad is in use, make them navigable. The game's existing pause gates
+      // gameplay, so we don't suppress inputs here.
+      if (this.autoNavSel && this.activeSource === 'gamepad' && this.autoNavVisible()) {
+        this.processAutoNav();
+      } else if (this.autoNavState) {
+        this.autoNavState.blur(this.overlay); this.autoNavState = null;
+      }
     }
 
     // decay relative/wheel accumulators each frame
@@ -431,6 +442,43 @@ export class InputSystem {
     if (this.gpEdge('_actPrev', this.gpAny((gp) => !!(gp.buttons[0] && gp.buttons[0].pressed)))) this.menuNav.act(this.overlay, (e) => this.emit('act', e));
     if (this.gpEdge('_backPrev', this.gpAny((gp) => !!(gp.buttons[1] && gp.buttons[1].pressed)))) menu.close();
     this.menuNav.position(this.overlay);
+  }
+
+  // ---- a game's own menus (opt-in via autoNavigate) ----
+
+  /**
+   * Make a game's own on-screen menu gamepad-navigable. Pass a CSS selector (or
+   * a function returning elements). While any match is VISIBLE and a gamepad is
+   * the active device, the d-pad/stick move a highlight across them and A
+   * activates (clicks) the focused one; B calls `opts.back` if given. It
+   * re-queries every frame, so it follows menus showing/hiding — call it once.
+   * No-op for mouse/touch/keyboard (use those menus natively).
+   */
+  autoNavigate(selector: string | (() => Array<HTMLElement | NavElement>), opts?: { back?: () => void }): void {
+    this.autoNavSel = typeof selector === 'string'
+      ? () => (Array.from(document.querySelectorAll(selector)) as HTMLElement[]).filter((e) => e.getClientRects().length > 0)
+      : selector;
+    this.autoNavBack = (opts && opts.back) || null;
+    this.autoNavState = null;
+  }
+  clearAutoNavigate(): void {
+    this.autoNavSel = null;
+    if (this.autoNavState) { this.autoNavState.blur(this.overlay); this.autoNavState = null; }
+  }
+  private autoNavVisible(): boolean { return !!this.autoNavSel && this.autoNavSel().length > 0; }
+  private processAutoNav(): void {
+    this.ensureOverlay();
+    if (!this.autoNavState) this.autoNavState = new NavState({ act: '', elements: this.autoNavSel! } as unknown as NavigableDef);
+    const F = (e: any) => this.emit('focus', e); const B = (e: any) => this.emit('blur', e);
+    this.autoNavState.requery(this.overlay, F);
+    const t = now();
+    if (this.navEdge('an:u', this.gpUp(), t)) this.autoNavState.moveDir('up', this.overlay, F, B);
+    else if (this.navEdge('an:d', this.gpDown(), t)) this.autoNavState.moveDir('down', this.overlay, F, B);
+    else if (this.navEdge('an:l', this.gpLeft(), t)) this.autoNavState.moveDir('left', this.overlay, F, B);
+    else if (this.navEdge('an:r', this.gpRight(), t)) this.autoNavState.moveDir('right', this.overlay, F, B);
+    if (this.gpEdge('_actPrev', this.gpAny((gp) => !!(gp.buttons[0] && gp.buttons[0].pressed)))) this.autoNavState.act(this.overlay, (e) => this.emit('act', e));
+    if (this.gpEdge('_backPrev', this.gpAny((gp) => !!(gp.buttons[1] && gp.buttons[1].pressed))) && this.autoNavBack) this.autoNavBack();
+    this.autoNavState.position(this.overlay);
   }
 
   private computeRaw(def: InputDef): number {
