@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
+import { hub } from "./hub/hub";
 import { Header } from "./components/Header";
 import { ThemeBinder } from "./theme";
 import { useAuth } from "./auth";
@@ -12,6 +14,17 @@ import { CreatePage } from "./routes/Create";
 
 export function App() {
   const { user, loading } = useAuth();
+
+  // Gamepad menu navigation (once for the whole app): while a gamepad is the
+  // active device and any `.btn` is visible, the d-pad/stick moves a highlight
+  // across buttons and A clicks the focused one. Re-queried every frame, so it
+  // follows React re-renders and route changes — covering every menu/dialog
+  // button (landing, puzzle list, login/signup, create, give-up modal,
+  // play-side actions). No-op for mouse/touch/keyboard; doesn't touch gameplay
+  // (the puzzle board uses the d-pad to slide tiles via its own input group).
+  useEffect(() => {
+    hub.input.autoNavigate(".btn");
+  }, []);
 
   return (
     <div className="app-shell">
