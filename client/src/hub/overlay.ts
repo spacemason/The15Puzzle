@@ -91,7 +91,12 @@ export class Overlay {
     if (def.type === 'joystick' || def.type === 'dpad') {
       wrap.innerHTML = '<div class="base"></div><div class="knob"></div>';
       (wrap.querySelector('.base') as HTMLElement).style.borderRadius = radius;
-      this.bindJoystick(def.id, wrap, def.type === 'dpad');
+      // Keep the knob a circle sized to the short edge (so a wide pill stick
+      // gets a round knob that slides, not a stretched ellipse).
+      const knobEl = wrap.querySelector('.knob') as HTMLElement;
+      const kd = Math.round(Math.min(w, h) * 0.5);
+      knobEl.style.width = kd + 'px'; knobEl.style.height = kd + 'px';
+      this.bindJoystick(def.id, wrap, def.type === 'dpad', def.axis || 'both');
     } else { // button | tap
       wrap.innerHTML = def.html ? def.html : `<span>${def.label || ''}</span>`;
       if (def.type === 'tap') wrap.classList.add('vc-transparent');
@@ -112,14 +117,27 @@ export class Overlay {
     window.addEventListener('mouseup', up);
   }
 
-  private bindJoystick(id: string, wrap: HTMLElement, discrete: boolean): void {
+  private bindJoystick(id: string, wrap: HTMLElement, discrete: boolean, axisMode: 'x' | 'y' | 'both' = 'both'): void {
     const knob = wrap.querySelector('.knob') as HTMLElement;
-    let touchId = -1; let cx = 0, cy = 0, maxR = 1;
-    const measure = () => { const r = wrap.getBoundingClientRect(); cx = r.left + r.width / 2; cy = r.top + r.height / 2; maxR = r.width / 2; };
+    let touchId = -1; let cx = 0, cy = 0, maxX = 1, maxY = 1;
+    const measure = () => {
+      const r = wrap.getBoundingClientRect();
+      cx = r.left + r.width / 2; cy = r.top + r.height / 2;
+      const knobR = (knob.getBoundingClientRect().width / 2) || Math.min(r.width, r.height) * 0.25;
+      maxX = Math.max(1, r.width / 2 - knobR);
+      maxY = Math.max(1, r.height / 2 - knobR);
+    };
     const set = (sx: number, sy: number) => {
-      let dx = sx - cx, dy = sy - cy; const d = Math.hypot(dx, dy);
-      if (d > maxR) { dx = dx * maxR / d; dy = dy * maxR / d; }
-      let ox = dx / maxR, oy = dy / maxR;
+      let dx = axisMode === 'y' ? 0 : sx - cx;
+      let dy = axisMode === 'x' ? 0 : sy - cy;
+      if (axisMode === 'both') {
+        const m = Math.min(maxX, maxY); const d = Math.hypot(dx, dy);
+        if (d > m) { dx = dx * m / d; dy = dy * m / d; }
+      } else {
+        dx = dx > maxX ? maxX : dx < -maxX ? -maxX : dx;
+        dy = dy > maxY ? maxY : dy < -maxY ? -maxY : dy;
+      }
+      let ox = maxX ? dx / maxX : 0, oy = maxY ? dy / maxY : 0;
       if (discrete) { ox = Math.abs(ox) > 0.4 ? Math.sign(ox) : 0; oy = Math.abs(oy) > 0.4 ? Math.sign(oy) : 0; }
       knob.style.transform = `translate(${dx}px, ${dy}px)`;
       this.callbacks.onStick(id, ox, oy);

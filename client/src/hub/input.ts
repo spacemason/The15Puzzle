@@ -80,6 +80,9 @@ export interface VirtualDef {
   width?: number;             // px — overrides size for width (non-square controls)
   height?: number;            // px — overrides size for height
   shape?: 'round' | 'circle' | 'square' | 'pill'; // default circle for sticks, round for buttons
+  /** Joystick/dpad travel axis: 'both' (default), or single-axis 'x'/'y'
+   *  (e.g. a horizontal pill for a side-scroller — only outputs that axis). */
+  axis?: 'x' | 'y' | 'both';
   opacity?: number;           // 0..1
   color?: string;             // accent colour (border, knob, pressed fill)
   bg?: string;                // resting background colour
