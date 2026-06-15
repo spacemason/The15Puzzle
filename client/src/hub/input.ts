@@ -206,6 +206,7 @@ export class InputSystem {
   private nav = new Map<string, NavState>();             // group -> nav state
   private raf = 0;
   private showVirtualOverride: boolean | null = null;    // user/menu toggle
+  private editingVirtual = false;                        // transient: layout editing
   private menuNav: NavState | null = null;               // built-in nav over the hub menu
   private _selPrev = false; private _actPrev = false; private _backPrev = false;
   private autoNavSel: (() => Array<HTMLElement | NavElement>) | null = null; // game's own menu (opt-in)
@@ -323,17 +324,24 @@ export class InputSystem {
   // ---- virtual visibility ----
 
   showVirtual(v: boolean): void { this.showVirtualOverride = v; this.overrides.showVirtual = v; this.persist(); this.syncVirtualVisibility(); }
-  toggleVirtual(): void { this.showVirtual(!this.virtualVisible()); }
-  private virtualVisible(): boolean {
+  toggleVirtual(): void { this.showVirtual(!this.showingVirtual); }
+  /** Temporarily force the controls visible for layout editing, WITHOUT
+   *  changing the player's show/hide preference (so the toggle stays in sync). */
+  setVirtualEditing(on: boolean): void { this.editingVirtual = on; this.syncVirtualVisibility(); }
+  /** The player-facing on/off state of the on-screen controls — what the
+   *  "Show on-screen controls" toggle reflects. An explicit choice wins; the
+   *  default is on for touch devices when no gamepad is active. Excludes the
+   *  transient edit-mode force. */
+  get showingVirtual(): boolean {
     if (this.showVirtualOverride != null) return this.showVirtualOverride;
     return this.touchDevice && !this.gamepadActive;
   }
   private syncVirtualVisibility(): void {
     if (!this.overlay) return;
-    const vis = this.virtualVisible();
+    if (this.editingVirtual) { this.overlay.setVirtualVisible(true, null); return; } // show all for editing
     const enabledGroups = new Set<string>();
     for (const [g, on] of this.groupEnabled) if (on) enabledGroups.add(g);
-    this.overlay.setVirtualVisible(vis, enabledGroups);
+    this.overlay.setVirtualVisible(this.showingVirtual, enabledGroups);
   }
 
   // ---- persistence + Controls UI ----

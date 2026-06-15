@@ -142,10 +142,11 @@ export class Overlay {
     window.addEventListener('mouseup', () => { if (mdown) { mdown = false; end(); } });
   }
 
-  setVirtualVisible(globalVis: boolean, enabledGroups: Set<string>): void {
-    this.globalVisible = globalVis; this.groupVisible = enabledGroups;
+  setVirtualVisible(globalVis: boolean, enabledGroups: Set<string> | null): void {
+    this.globalVisible = globalVis; this.groupVisible = enabledGroups || new Set();
+    const allGroups = !enabledGroups;   // null → show controls of every group (editing)
     for (const c of this.controls) {
-      const show = (globalVis || this.editMode) && enabledGroups.has(c.group);
+      const show = globalVis && (allGroups || enabledGroups!.has(c.group));
       c.el.style.display = show ? '' : 'none';
     }
   }
@@ -324,8 +325,8 @@ export class Overlay {
       </div>`;
     this.root.appendChild(p); this.panelEl = p;
     const showv = p.querySelector('.showv') as HTMLInputElement;
-    showv.checked = sys.touchDevice ? sys['virtualVisible']?.() ?? true : (overrides.showVirtual === true);
-    showv.addEventListener('change', () => sys.showVirtual(showv.checked));
+    showv.checked = !!sys.showingVirtual;
+    showv.addEventListener('change', () => { sys.showVirtual(showv.checked); });
     p.querySelector('.editlayout')!.addEventListener('click', () => { this.setEditMode(!this.editMode, sys); });
     p.querySelector('.reset')!.addEventListener('click', () => { sys.resetControls(); this.closeControls(); });
     p.querySelector('.done')!.addEventListener('click', () => { this.setEditMode(false, sys); this.closeControls(); });
@@ -357,9 +358,10 @@ export class Overlay {
   private setEditMode(on: boolean, sys: any): void {
     this.editMode = on;
     this.host.classList.toggle('editing', on);
-    // force-show controls while editing
-    sys.showVirtual(on ? true : (sys.touchDevice && true));
-    this.setVirtualVisible(true, this.groupVisible.size ? this.groupVisible : new Set(this.controls.map((c) => c.group)));
+    // Force the controls visible for editing without touching the player's
+    // show/hide preference (so the "Show on-screen controls" toggle stays in
+    // sync). On exit, visibility reverts to that preference.
+    sys.setVirtualEditing(on);
   }
   private bindEditDrag(id: string, el: HTMLElement): void {
     let dragging = false; let sx = 0, sy = 0;

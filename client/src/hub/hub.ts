@@ -1011,6 +1011,58 @@ export class Hub {
       () => ({ games: [] }),
     );
   }
+
+  // --- records ---
+
+  /** This user's leaderboard standings, grouped by game (all games, or one via
+   *  `forSlug`). Empty offline / logged out. */
+  myRecords(forSlug?: string): Promise<{ games: Array<{ slug: string; title: string; records: Array<{ key: string; title: string; score: number; sortDir: SortDir; rank: number }> }> }> {
+    const q = forSlug ? `?game=${encodeURIComponent(forSlug)}` : '';
+    return this.call(() => this.req(`/me/records${q}`), () => ({ games: [] }));
+  }
+
+  // --- inventory & economy (per game) ---
+
+  /** This game's inventory + coin balance for the current user. */
+  getInventory(): Promise<{ items: Array<{ key: string; qty: number }>; coins: number }> {
+    return this.call(() => this.req(`${this.game()}/inventory`), () => ({ items: [], coins: 0 }));
+  }
+  /** Another player's available holdings (for composing a trade). */
+  playerInventory(userId: number): Promise<{ items: Array<{ key: string; qty: number }>; coins: number }> {
+    return this.call(() => this.req(`${this.game()}/players/${encodeURIComponent(userId)}/inventory`), () => ({ items: [], coins: 0 }));
+  }
+  /** Add goods to the caller (gameplay rewards). Returns the new snapshot. */
+  grant(bundle: { items?: Record<string, number>; coins?: number }): Promise<{ items: Array<{ key: string; qty: number }>; coins: number }> {
+    return this.post(`${this.game()}/inventory/grant`, bundle);
+  }
+  /** Atomic swap with the house: remove `take`, add `give`. */
+  exchange(take?: unknown, give?: unknown): Promise<{ items: Array<{ key: string; qty: number }>; coins: number }> {
+    return this.post(`${this.game()}/inventory/exchange`, { take, give });
+  }
+  sell(items: Record<string, number>, coins: number): Promise<unknown> { return this.post(`${this.game()}/inventory/exchange`, { take: { items }, give: { coins } }); }
+  buy(coins: number, items: Record<string, number>): Promise<unknown> { return this.post(`${this.game()}/inventory/exchange`, { take: { coins }, give: { items } }); }
+  /** Wipe this user's progress for this game (saves/stats/inventory/coins). */
+  resetGame(): Promise<{ ok: true }> { return this.post(`${this.game()}/reset`); }
+
+  // --- trades (per game, async player-to-player) ---
+
+  listPlayers(): Promise<{ players: unknown[] }> { return this.call(() => this.req(`${this.game()}/trades/players`), () => ({ players: [] })); }
+  listTrades(opts: { box?: string; status?: string } = {}): Promise<{ offers?: unknown[]; trades?: unknown[] }> {
+    const q = new URLSearchParams();
+    if (opts.box) q.set('box', opts.box);
+    if (opts.status) q.set('status', opts.status);
+    const s = q.toString();
+    return this.call(() => this.req(`${this.game()}/trades${s ? `?${s}` : ''}`), () => ({ offers: [] }));
+  }
+  createTrade(toUser: string | number, give?: unknown, want?: unknown, opts: { note?: string } = {}): Promise<unknown> {
+    return this.post(`${this.game()}/trades`, { toUser, give, want, note: opts.note });
+  }
+  acceptTrade(id: string | number): Promise<unknown> { return this.post(`${this.game()}/trades/${encodeURIComponent(String(id))}/accept`); }
+  declineTrade(id: string | number): Promise<unknown> { return this.post(`${this.game()}/trades/${encodeURIComponent(String(id))}/decline`); }
+  cancelTrade(id: string | number): Promise<unknown> { return this.post(`${this.game()}/trades/${encodeURIComponent(String(id))}/cancel`); }
+  counterTrade(id: string | number, give?: unknown, want?: unknown, opts: { note?: string } = {}): Promise<unknown> {
+    return this.post(`${this.game()}/trades/${encodeURIComponent(String(id))}/counter`, { give, want, note: opts.note });
+  }
 }
 
 /** A ready-to-use client with slug and API base auto-detected. */
