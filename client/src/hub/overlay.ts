@@ -188,6 +188,14 @@ export class Overlay {
         clearPos(c.el); c.el.style.left = ov.x + '%'; c.el.style.top = ov.y + '%';
         continue;
       }
+      if (c.def.pos) {                                    // explicit pixel position
+        clearPos(c.el); const p = c.def.pos;
+        if (p.left != null) c.el.style.left = p.left + 'px';
+        if (p.right != null) c.el.style.right = p.right + 'px';
+        if (p.top != null) c.el.style.top = p.top + 'px';
+        if (p.bottom != null) c.el.style.bottom = p.bottom + 'px';
+        continue;
+      }
       const a = (c.def.place || 'bottom-left');
       if (!byAnchor.has(a)) byAnchor.set(a, []);
       byAnchor.get(a)!.push(c);

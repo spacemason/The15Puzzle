@@ -76,6 +76,9 @@ export interface VirtualDef {
   id: string;
   type: 'button' | 'joystick' | 'dpad' | 'tap';
   place: Anchor;
+  /** Explicit pixel position from the viewport edges — bypasses anchor auto-
+   *  layout for this control (e.g. pin a pause button just above a stick). */
+  pos?: { left?: number; right?: number; top?: number; bottom?: number };
   size?: number;              // px (joystick/button diameter; or width if w/h given)
   width?: number;             // px — overrides size for width (non-square controls)
   height?: number;            // px — overrides size for height
