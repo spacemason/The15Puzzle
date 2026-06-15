@@ -97,7 +97,7 @@ export class Overlay {
       // keep a smaller knob so it has room to travel in both directions.
       const knobEl = wrap.querySelector('.knob') as HTMLElement;
       const single = def.axis === 'x' || def.axis === 'y';
-      const kd = Math.round(Math.min(w, h) * (single ? 0.82 : 0.5));
+      const kd = Math.round(Math.min(w, h) * (single ? 0.92 : 0.5));
       knobEl.style.width = kd + 'px'; knobEl.style.height = kd + 'px';
       this.bindJoystick(def.id, wrap, def.type === 'dpad', def.axis || 'both');
     } else { // button | tap
