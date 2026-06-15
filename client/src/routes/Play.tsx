@@ -46,7 +46,7 @@ function ensureHubInput() {
             touch: { stick: "dpad", axis: "x+" },
           },
         },
-        virtual: [{ id: "dpad", type: "dpad", place: "bottom" }],
+        virtual: [],
       },
     },
   });

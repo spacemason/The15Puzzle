@@ -92,9 +92,12 @@ export class Overlay {
       wrap.innerHTML = '<div class="base"></div><div class="knob"></div>';
       (wrap.querySelector('.base') as HTMLElement).style.borderRadius = radius;
       // Keep the knob a circle sized to the short edge (so a wide pill stick
-      // gets a round knob that slides, not a stretched ellipse).
+      // gets a round knob that slides, not a stretched ellipse). Single-axis
+      // sticks get a bigger knob that mostly fills the short edge; 2D sticks
+      // keep a smaller knob so it has room to travel in both directions.
       const knobEl = wrap.querySelector('.knob') as HTMLElement;
-      const kd = Math.round(Math.min(w, h) * 0.5);
+      const single = def.axis === 'x' || def.axis === 'y';
+      const kd = Math.round(Math.min(w, h) * (single ? 0.82 : 0.5));
       knobEl.style.width = kd + 'px'; knobEl.style.height = kd + 'px';
       this.bindJoystick(def.id, wrap, def.type === 'dpad', def.axis || 'both');
     } else { // button | tap
@@ -160,6 +163,13 @@ export class Overlay {
     window.addEventListener('mouseup', () => { if (mdown) { mdown = false; end(); } });
   }
 
+  /** Replace a button/tap control's inner content at runtime (e.g. an SVG that
+   *  reflects game state). Listeners live on the wrapper, so they survive. */
+  setControlHtml(id: string, html: string): void {
+    const c = this.controls.find((x) => (x.el as any).__id === id);
+    if (c && (c.def.type === 'button' || c.def.type === 'tap')) c.el.innerHTML = html;
+  }
+
   setVirtualVisible(globalVis: boolean, enabledGroups: Set<string> | null): void {
     this.globalVisible = globalVis; this.groupVisible = enabledGroups || new Set();
     const allGroups = !enabledGroups;   // null → show controls of every group (editing)
@@ -198,26 +208,34 @@ export class Overlay {
     const vEdge = onTop ? 'top' : 'bottom';
     const hEdge = onRight ? 'right' : 'left';
 
+    // Sticks at the corner, side by side inward by their real widths.
     let reserve = m;
-    sticks.forEach((c, i) => {
-      const s = c.def.size || 130; const st = c.el.style; clearPos(c.el);
+    sticks.forEach((c) => {
+      const sw = c.def.width || c.def.size || 130; const st = c.el.style; clearPos(c.el);
       if (midY) { st.top = '50%'; } else { (st as any)[vEdge] = m + 'px'; }
       if (midX) { st.left = '50%'; st.transform = `translate(-50%, ${midY ? '-50%' : '0'})`; }
-      else { (st as any)[hEdge] = (m + i * (s + gap)) + 'px'; if (midY) st.transform = 'translateY(-50%)'; }
-      reserve = Math.max(reserve, m + (i + 1) * (s + gap));
+      else { (st as any)[hEdge] = reserve + 'px'; if (midY) st.transform = 'translateY(-50%)'; }
+      reserve += sw + gap;
     });
 
-    const baseInset = sticks.length ? reserve : m;
-    const perCol = 3;
-    buttons.forEach((c, i) => {
-      const s = c.def.size || 72; const st = c.el.style; clearPos(c.el);
-      const col = Math.floor(i / perCol), row = i % perCol;
-      const inset = baseInset + col * (s + gap);
-      const along = m + row * (s + gap);
+    // Buttons cluster inset past any stick, stacked along the vertical edge using
+    // CUMULATIVE real heights + a min gap, so different-sized buttons never
+    // overlap. Wrap into a new inward column when the stack gets tall.
+    const limit = (typeof window !== 'undefined' ? window.innerHeight : 800) - m;
+    let colOffset = sticks.length ? reserve : m;
+    let along = m, colWidth = 0, count = 0;
+    for (const c of buttons) {
+      const bw = c.def.width || c.def.size || 72;
+      const bh = c.def.height || c.def.size || 72;
+      if (count > 0 && (count >= 3 || along + bh > limit)) {   // new column
+        colOffset += colWidth + gap; along = m; colWidth = 0; count = 0;
+      }
+      const st = c.el.style; clearPos(c.el);
       (st as any)[vEdge] = along + 'px';
       if (midX) { st.left = '50%'; st.transform = 'translateX(-50%)'; }
-      else { (st as any)[hEdge] = inset + 'px'; }
-    });
+      else { (st as any)[hEdge] = colOffset + 'px'; }
+      along += bh + gap; colWidth = Math.max(colWidth, bw); count += 1;
+    }
   }
 
   // ---- highlight ring ----

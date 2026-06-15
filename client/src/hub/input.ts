@@ -326,6 +326,9 @@ export class InputSystem {
 
   // ---- virtual visibility ----
 
+  /** Update a virtual button's content at runtime (e.g. an SVG reflecting game
+   *  state). Pass the control id and HTML. For button/tap controls. */
+  setVirtualHtml(id: string, html: string): void { if (this.overlay) this.overlay.setControlHtml(id, html); }
   showVirtual(v: boolean): void { this.showVirtualOverride = v; this.overrides.showVirtual = v; this.persist(); this.syncVirtualVisibility(); }
   toggleVirtual(): void { this.showVirtual(!this.showingVirtual); }
   /** Temporarily force the controls visible for layout editing, WITHOUT
