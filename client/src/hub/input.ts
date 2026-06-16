@@ -211,7 +211,8 @@ export class InputSystem {
   private overlay: Overlay | null = null;
   private nav = new Map<string, NavState>();             // group -> nav state
   private raf = 0;
-  private showVirtualOverride: boolean | null = null;    // user/menu toggle
+  private showVirtualOverride: boolean | null = null;    // user/menu toggle (persists)
+  private virtualDefault: boolean | null = null;         // game-set default (player toggle wins)
   private editingVirtual = false;                        // transient: layout editing
   private menuNav: NavState | null = null;               // built-in nav over the hub menu
   private _selPrev = false; private _actPrev = false; private _backPrev = false;
@@ -349,13 +350,18 @@ export class InputSystem {
   /** Temporarily force the controls visible for layout editing, WITHOUT
    *  changing the player's show/hide preference (so the toggle stays in sync). */
   setVirtualEditing(on: boolean): void { this.editingVirtual = on; this.syncVirtualVisibility(); }
+  /** Set the DEFAULT on-screen-controls visibility for this game (the player's
+   *  saved toggle still wins). Use `false` to hide controls for a game that
+   *  doesn't need them. `null` = auto (shown on touch devices without a pad). */
+  setVirtualDefault(v: boolean | null): void { this.virtualDefault = v; this.syncVirtualVisibility(); }
   /** The player-facing on/off state of the on-screen controls — what the
    *  "Show on-screen controls" toggle reflects. An explicit choice wins; the
    *  default is on for touch devices when no gamepad is active. Excludes the
    *  transient edit-mode force. */
   get showingVirtual(): boolean {
-    if (this.showVirtualOverride != null) return this.showVirtualOverride;
-    return this.touchDevice && !this.gamepadActive;
+    if (this.showVirtualOverride != null) return this.showVirtualOverride; // player choice
+    if (this.virtualDefault != null) return this.virtualDefault;           // game default
+    return this.touchDevice && !this.gamepadActive;                        // auto
   }
   private syncVirtualVisibility(): void {
     if (!this.overlay) return;
