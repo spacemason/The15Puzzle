@@ -1,0 +1,56 @@
+# Auto-deploy on push — SSHes into the diffenderfer.games host, pulls, installs,
+# and restarts the catalog (which rebuilds this game). It only runs when the
+# deploy secrets are configured, so a freshly-cloned game (no secrets) just
+# skips deploy instead of failing.
+#
+# Configure in the repo's Settings → Secrets and variables → Actions:
+#   DEPLOY_HOST     host or droplet IP                 (required to enable)
+#   DEPLOY_SSH_KEY  private deploy key                 (required to enable)
+#   DEPLOY_USER     ssh user            (optional, default: root)
+#   DEPLOY_PATH     dir on the server   (optional, default: this repo's name)
+# See the host repo's ACTIONS.md for full setup.
+name: Deploy
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for deploy secrets
+        id: gate
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -n "$HOST" ] && [ -n "$KEY" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DEPLOY_HOST / DEPLOY_SSH_KEY not set — skipping deploy."
+          fi
+
+      - name: SSH and update
+        if: steps.gate.outputs.ready == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER || 'root' }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "/root/${{ secrets.DEPLOY_PATH || github.event.repository.name }}"
+            git fetch --all --prune
+            git reset --hard "origin/$(git symbolic-ref --short HEAD)"
+            npm ci --no-audit --no-fund
+            rm -f .diffenderfer-build-cache
+            systemctl restart diffenderfer-games
+            echo "deployed $(git rev-parse --short HEAD)"

@@ -1,7 +1,8 @@
 import { useEffect } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { hub } from "./hub/hub";
 import { Header } from "./components/Header";
+import { DailyPlay } from "./routes/DailyPlay";
 import { ThemeBinder } from "./theme";
 import { useAuth } from "./auth";
 import { RequireAuth } from "./components/RequireAuth";
@@ -14,6 +15,7 @@ import { CreatePage } from "./routes/Create";
 
 export function App() {
   const { user, loading } = useAuth();
+  const nav = useNavigate();
 
   // Gamepad menu navigation (once for the whole app): while a gamepad is the
   // active device and any `.btn` is visible, the d-pad/stick moves a highlight
@@ -24,7 +26,14 @@ export function App() {
   // (the puzzle board uses the d-pad to slide tiles via its own input group).
   useEffect(() => {
     hub.input.autoNavigate(".btn");
-  }, []);
+    // Daily challenges: a clicked date in the hub menu (or a /the15puzzle/?daily=DATE
+    // deep link) starts a seeded daily board. ensureGuest first so the completion
+    // can't 401; play() just routes to the self-contained /daily screen, which
+    // reads the active challenge's seed. No 15-puzzle account needed for a daily.
+    void hub.ensureGuest().catch(() => {}).then(() => {
+      hub.daily.define({ play: () => nav("/daily") });
+    });
+  }, [nav]);
 
   return (
     <div className="app-shell">
@@ -65,6 +74,7 @@ export function App() {
                 </RequireAuth>
               }
             />
+            <Route path="/daily" element={<DailyPlay />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         )}

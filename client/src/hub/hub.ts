@@ -26,6 +26,9 @@
 import { InputSystem } from './input';
 import type { InputOverrides } from './input';
 export * from './input';
+import { DailySystem } from './daily';
+import type { DailyHost } from './daily';
+export * from './daily';
 
 // ---------------------------------------------------------------------------
 // Wire types — these mirror the JSON the API returns.
@@ -533,6 +536,35 @@ export class Hub {
   /** The generic input system (desktop/touch/gamepad). Lazy singleton — see
    *  the input module. Use `hub.input.define({...})`, `hub.input.value('jump')`. */
   get input(): InputSystem { return getInput(); }
+
+  private _daily: DailySystem | null = null;
+  /** Daily challenges. A game calls `hub.daily.define({ play })` once at load;
+   *  on finish, `hub.daily.complete({...})`. Page-wide singleton shared with the
+   *  injected menu (which can `startAndPlay` a clicked date on this instance). */
+  get daily(): DailySystem {
+    if (typeof window !== 'undefined' && (window as any).__HUB_DAILY__) {
+      return (window as any).__HUB_DAILY__ as DailySystem;
+    }
+    if (this._daily) return this._daily;
+    const sys = new DailySystem(this.makeDailyHost());
+    this._daily = sys;
+    if (typeof window !== 'undefined') (window as any).__HUB_DAILY__ = sys;
+    return sys;
+  }
+
+  private makeDailyHost(): DailyHost {
+    const self = this;
+    return {
+      get slug() { return self.slug; },
+      status() { return self.req(`${self.game()}/daily`); },
+      all() { return self.req('/daily'); },
+      start(day: string) { return self.post(`${self.game()}/daily/${encodeURIComponent(day)}/start`); },
+      complete(day: string, token: string, meta: unknown) {
+        return self.post(`${self.game()}/daily/${encodeURIComponent(day)}/complete`, { token, meta });
+      },
+      emit(name: string, detail?: unknown) { self.emit(name, detail); },
+    };
+  }
 
   /** Queued mutations + buffered analytics events awaiting sync. */
   pending(): number { return this.store.queueLength() + this.store.getEvents().length; }
