@@ -50,7 +50,7 @@ jobs:
             cd "/root/${{ secrets.DEPLOY_PATH || github.event.repository.name }}"
             git fetch --all --prune
             git reset --hard "origin/$(git symbolic-ref --short HEAD)"
-            npm ci --no-audit --no-fund
+            npm install --no-audit --no-fund
             rm -f .diffenderfer-build-cache
             systemctl restart diffenderfer-games
             echo "deployed $(git rev-parse --short HEAD)"
