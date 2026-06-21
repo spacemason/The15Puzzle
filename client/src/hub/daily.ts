@@ -117,6 +117,13 @@ export class DailySystem {
   }
 
   private deepLinkDay(): string | null {
+    // Prefer the value the host's injected snippet captured at parse time — it
+    // survives games that rewrite their own URL on boot. Fall back to the live
+    // URL (covers vendored games whose client predates that snippet capture).
+    try {
+      const stashed = (window as unknown as { __hubDailyDeep?: string }).__hubDailyDeep;
+      if (typeof stashed === 'string' && DAY_RE.test(stashed)) return stashed;
+    } catch { /* ignore */ }
     if (typeof location === 'undefined') return null;
     try {
       const d = new URL(location.href).searchParams.get('daily');
