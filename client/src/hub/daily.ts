@@ -19,28 +19,31 @@ export interface DailyChallenge {
   alreadyCompleted?: boolean;
 }
 
-export interface DailyDayStatus {
-  day: string;
-  seed: number;
-  completed: boolean;
-  completedAt: number | null;
+/** One completed day: when (server clock, ms) + the metadata the game sent. */
+export interface DailyCompletion {
+  completedAt: number;
   meta: unknown;
 }
 
+/** A game's completions keyed by calendar day 'YYYY-MM-DD'. The client owns the
+ *  calendar/window using its *local* date, so the server just reports which
+ *  days are done. */
+export type DailyCompletions = Record<string, DailyCompletion>;
+
 export interface DailyStatus {
   enabled: boolean;
-  today: string;
-  window: DailyDayStatus[];
+  today: string; // UTC 'today' hint; the client uses its own local date
+  completions: DailyCompletions;
 }
 
 export interface DailyGameStatus {
   slug: string;
   title: string;
-  today: string;
-  window: DailyDayStatus[];
+  completions: DailyCompletions;
 }
 
 export interface DailyAll {
+  today: string;
   games: DailyGameStatus[];
   global: Array<{ rank: number; userId: number; username: string; score: number }>;
 }
