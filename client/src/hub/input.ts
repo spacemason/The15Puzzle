@@ -627,7 +627,10 @@ export class InputSystem {
     window.addEventListener('keydown', (e) => {
       const k = e.key.toLowerCase();
       this.keys.add(k);
-      if (this.defined && this.isGameKey(k)) e.preventDefault();
+      // Space/arrows are cancelled so they never scroll the page mid-game —
+      // but not while typing, or a text field could never get a space and
+      // its cursor could never move.
+      if (this.defined && this.isGameKey(k) && !this.isTypingTarget(e.target)) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
     window.addEventListener('mousemove', (e) => {
@@ -648,6 +651,14 @@ export class InputSystem {
   }
   private isGameKey(k: string): boolean {
     return k === ' ' || k === 'arrowup' || k === 'arrowdown' || k === 'arrowleft' || k === 'arrowright';
+  }
+  /** A text-entry element: typing there owns Space and the arrow keys. */
+  private isTypingTarget(t: EventTarget | null): boolean {
+    if (!(t instanceof HTMLElement)) return false;
+    if (t.isContentEditable || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return true;
+    if (!(t instanceof HTMLInputElement)) return false;
+    // Buttons, checkboxes, sliders etc. are inputs too, but don't take text.
+    return !['button', 'submit', 'reset', 'checkbox', 'radio', 'range', 'color', 'file', 'image'].includes(t.type);
   }
 
   private ensureOverlay(): void { if (!this.overlay) this.overlay = new Overlay(); }

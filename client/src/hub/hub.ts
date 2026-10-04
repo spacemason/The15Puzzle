@@ -537,6 +537,11 @@ export class Hub {
    *  the input module. Use `hub.input.define({...})`, `hub.input.value('jump')`. */
   get input(): InputSystem { return getInput(); }
 
+  /** Show/hide the injected hub menu button (e.g. hide it during active play so
+   *  it doesn't cover the game, show it on pause/menus). Page-wide; see
+   *  {@link HubMenuControl}. */
+  get menu(): HubMenuControl { return hubMenu; }
+
   private _daily: DailySystem | null = null;
   /** Daily challenges. A game calls `hub.daily.define({ play })` once at load;
    *  on finish, `hub.daily.complete({...})`. Page-wide singleton shared with the
@@ -1096,6 +1101,44 @@ export class Hub {
     return this.post(`${this.game()}/trades/${encodeURIComponent(String(id))}/counter`, { give, want, note: opts.note });
   }
 }
+
+// ---------------------------------------------------------------------------
+// Injected-menu visibility. The menu (/_hub/menu.js) may load before or after
+// the game, and a vendored game bundles its own copy of this client, so the
+// shared state is a window global + a window event rather than an object:
+//   window.__HUB_MENU_VISIBLE__  (boolean, absent = visible)
+//   'hub:menu-visibility'        (CustomEvent, detail: { visible: boolean })
+// menu.js reads the global on boot and listens for the event.
+// ---------------------------------------------------------------------------
+
+/** Control over the injected hub menu button. */
+export interface HubMenuControl {
+  /** Show (true) or hide (false) the menu button. Hidden = faded out, not
+   *  focusable, `aria-hidden`; an open drawer stays open until closed, and the
+   *  gamepad Select button still opens it. A tiny corner hotspot peeks it back
+   *  for a few seconds on hover/tap so players can always reach it. */
+  setVisible(visible: boolean): void;
+  show(): void;
+  hide(): void;
+  /** The last requested visibility (true unless a game hid it). */
+  readonly visible: boolean;
+}
+
+const hubMenu: HubMenuControl = {
+  setVisible(visible: boolean): void {
+    if (typeof window === 'undefined') return;
+    const v = !!visible;
+    const w = window as any;
+    if (w.__HUB_MENU_VISIBLE__ === v || (w.__HUB_MENU_VISIBLE__ === undefined && v)) return;
+    w.__HUB_MENU_VISIBLE__ = v;
+    try { window.dispatchEvent(new CustomEvent('hub:menu-visibility', { detail: { visible: v } })); } catch { /* */ }
+  },
+  show(): void { this.setVisible(true); },
+  hide(): void { this.setVisible(false); },
+  get visible(): boolean {
+    return typeof window === 'undefined' || (window as any).__HUB_MENU_VISIBLE__ !== false;
+  },
+};
 
 /** A ready-to-use client with slug and API base auto-detected. */
 export const hub = new Hub();
