@@ -160,9 +160,8 @@ function RaceBoard({ start }: { start: RaceStart }) {
   const [moves, setMoves] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [solvedAt, setSolvedAt] = useState<number | null>(null);
-  const [out, setOut] = useState(false);
   const [iWon, setIWon] = useState(false);
-  const live = now >= start.startAt && solvedAt == null && !result && !out;
+  const live = now >= start.startAt && solvedAt == null && !result;
   // Read-only hook for the hub race tests (tests/hub/race.test.mjs).
   (window as unknown as { __P15_RACE__?: unknown }).__P15_RACE__ = { board, moves, live, seed: start.seed, startAt: start.startAt };
 
@@ -215,11 +214,6 @@ function RaceBoard({ start }: { start: RaceStart }) {
     return () => { cancelAnimationFrame(raf); hub.input.disable("play"); };
   }, []);
 
-  const giveUp = () => {
-    setOut(true);
-    void hub.race.forfeit().catch(() => {});
-  };
-
   const puzzle: PuzzleFull = {
     id: -2, name: "Race", difficulty: scrambleOf(start), optimalMoves: 0,
     builtIn: true, creatorId: null, creatorName: null, showNumbers: true,
@@ -260,14 +254,12 @@ function RaceBoard({ start }: { start: RaceStart }) {
               <div style={{ fontSize: 14, opacity: 0.85 }}>{moves} moves</div>
             </div>
           </div>
-        ) : result || out ? (
+        ) : result ? (
           <div className="race-lock race-over">Race over</div>
         ) : null}
       </div>
 
-      <div className="play-side">
-        {live ? <button className="btn" data-testid="race-giveup" onClick={giveUp}>🏳️ Give up</button> : null}
-      </div>
+      {/* Give up lives in the hub's race bar (one place for every race game). */}
     </div>
   );
 }

@@ -389,8 +389,12 @@ input:focus, textarea:focus, select:focus {
   box-shadow: inset 0 0 0 1px var(--border);
 }
 
+/* Tiles are placed by transform (x/y already include the gap), so anchor them
+   at the board's corner rather than its padded content box. */
 .tile {
   position: absolute;
+  left: 0;
+  top: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -568,6 +572,9 @@ canvas.particles {
   .race-board-page .play-side:first-child { flex-direction: row; }
   .race-board-page .play-side:first-child .stat { flex: 1; padding: 10px 14px; }
 }
-.race-lock { position: absolute; inset: 14px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
-  font-size: 26px; font-weight: 800; background: rgba(11, 13, 18, 0.55); color: var(--fg); pointer-events: none; }
-.race-over { background: rgba(11, 13, 18, 0.35); font-size: 22px; }
+/* Before the go: the board is dimmed (no planning ahead) and the hub's 3-2-1
+   sits over it; "Get ready" rides above the count so the two never collide. */
+.race-lock { position: absolute; inset: 14px; border-radius: 12px; display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 18%; font-size: 24px; font-weight: 800; background: rgba(11, 13, 18, 0.84); backdrop-filter: blur(3px);
+  color: var(--fg); pointer-events: none; }
+.race-over { align-items: center; padding-top: 0; background: rgba(11, 13, 18, 0.35); backdrop-filter: none; font-size: 22px; }

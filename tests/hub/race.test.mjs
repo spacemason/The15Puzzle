@@ -91,7 +91,10 @@ e2e('race: a private race joined by code → Give up → the other player wins',
   await input.type(code);
   await bob.click(`${L}.so-dialog button`, /^Join$/);
   await Promise.all([waitLive(alice), waitLive(bob)]);
-  await bob.tid('race-giveup');
+  // Give up lives in the hub's race bar (the game has no button of its own).
+  assert.equal(await bob.page.$('[data-testid="race-giveup"]'), null, 'no duplicate Give up in the game');
+  await bob.click(`${L}.so-hudgiveup`);
+  await bob.click(`${L}.so-dialog button`, /^Give up$/);
   await alice.find(`${L}.so-dialog .so-dtitle`, 'You won! 🏆');
   await alice.find(`${L}.so-dialog .so-rhow`, `${bob.name} gave up — you win!`);
   await bob.find(`${L}.so-dialog .so-rhow`, 'You gave up.');
