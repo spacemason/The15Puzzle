@@ -16,6 +16,9 @@ interface VCallbacks {
 
 interface Rect { x: number; y: number; width: number; height: number; }
 
+/** Px insets from each viewport edge. */
+export interface Insets { top: number; right: number; bottom: number; left: number; }
+
 const ACCENT = '#ff5f3b';
 
 export class Overlay {
@@ -51,12 +54,20 @@ export class Overlay {
     (document.body || document.documentElement).appendChild(this.host);
     window.addEventListener('resize', () => this.layout());
     window.addEventListener('orientationchange', () => setTimeout(() => this.layout(), 200));
+    // Keep top/bottom controls clear of the hub's race HUD while it shows.
+    window.addEventListener('hub:race-hud', (e: Event) => {
+      const d = (e as CustomEvent).detail || {};
+      const top = d.visible ? Number(d.top) || 0 : 0, bottom = d.visible ? Number(d.bottom) || 0 : 0;
+      if (top === this.raceHud.top && bottom === this.raceHud.bottom) return;
+      this.raceHud = { top, bottom }; this.layout();
+    });
   }
 
   // ---- virtual controls ----
 
   build(config: InputConfig, overrides: InputOverrides, cb: VCallbacks): void {
     this.callbacks = cb;
+    this.overrides = overrides;
     this.controlsLayer.innerHTML = '';
     this.controls = [];
     for (const [group, g] of Object.entries(config.groups)) {
@@ -69,7 +80,7 @@ export class Overlay {
         this.controls.push({ def: merged, group, el });
       }
     }
-    this.layout(overrides);
+    this.layout();
   }
 
   private makeControl(def: VirtualDef, _overrides: InputOverrides): HTMLElement {
@@ -179,71 +190,59 @@ export class Overlay {
     }
   }
 
-  private layout(overrides?: InputOverrides): void {
-    const m = 22, gap = 14;
-    const byAnchor = new Map<string, Array<{ def: VirtualDef; el: HTMLElement }>>();
-    for (const c of this.controls) {
-      const ov = overrides && overrides.virtual && overrides.virtual[(c.el as any).__id];
-      if (ov && ov.x != null && ov.y != null) {           // explicit player override
-        clearPos(c.el); c.el.style.left = ov.x + '%'; c.el.style.top = ov.y + '%';
-        continue;
-      }
-      if (c.def.pos) {                                    // explicit pixel position
-        clearPos(c.el); const p = c.def.pos;
-        if (p.left != null) c.el.style.left = p.left + 'px';
-        if (p.right != null) c.el.style.right = p.right + 'px';
-        if (p.top != null) c.el.style.top = p.top + 'px';
-        if (p.bottom != null) c.el.style.bottom = p.bottom + 'px';
-        continue;
-      }
-      const a = (c.def.place || 'bottom-left');
-      if (!byAnchor.has(a)) byAnchor.set(a, []);
-      byAnchor.get(a)!.push(c);
-    }
-    for (const [a, list] of byAnchor) this.layoutAnchor(a as Anchor, list, m, gap);
+  /** Game-set insets (px) that auto-placed controls keep clear of, e.g. a top
+   *  HUD bar. See `hub.input.setInsets`. */
+  setInsets(ins: Partial<Insets>): void {
+    this.gameInsets = { ...this.gameInsets, ...ins };
+    this.layout();
   }
 
-  /** Lay out one anchor's controls so action buttons cluster *beside* (not on
-   *  top of) any joystick/d-pad sharing that corner. Sticks sit at the corner;
-   *  buttons are inset past the sticks and stacked, wrapping into columns. */
-  private layoutAnchor(a: Anchor, list: Array<{ def: VirtualDef; el: HTMLElement }>, m: number, gap: number): void {
-    const sticks = list.filter((c) => c.def.type === 'joystick' || c.def.type === 'dpad');
-    const buttons = list.filter((c) => c.def.type === 'button' || c.def.type === 'tap');
-    const onTop = a.startsWith('top');
-    const onLeft = a.endsWith('left'), onRight = a.endsWith('right');
-    const midX = a === 'top' || a === 'bottom' || a === 'center';
-    const midY = a === 'left' || a === 'right' || a === 'center';
-    const vEdge = onTop ? 'top' : 'bottom';
-    const hEdge = onRight ? 'right' : 'left';
-
-    // Sticks at the corner, side by side inward by their real widths.
-    let reserve = m;
-    sticks.forEach((c) => {
-      const sw = c.def.width || c.def.size || 130; const st = c.el.style; clearPos(c.el);
-      if (midY) { st.top = '50%'; } else { (st as any)[vEdge] = m + 'px'; }
-      if (midX) { st.left = '50%'; st.transform = `translate(-50%, ${midY ? '-50%' : '0'})`; }
-      else { (st as any)[hEdge] = reserve + 'px'; if (midY) st.transform = 'translateY(-50%)'; }
-      reserve += sw + gap;
+  /** Re-place every control for the current viewport. Player overrides (the
+   *  last ones passed to build) are kept and re-clamped on-screen, so a resize
+   *  or rotation never snaps a customized layout back to the defaults. */
+  layout(): void {
+    if (typeof window === 'undefined' || !this.controls.length) return;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const safe = this.readSafeArea();
+    const gi = this.gameInsets;
+    const rh = this.raceHud;
+    const insets: Insets = {
+      top: (gi.top || 0) + rh.top, right: gi.right || 0,
+      bottom: (gi.bottom || 0) + rh.bottom, left: gi.left || 0,
+    };
+    const items: LayoutItem[] = this.controls.map((c) => {
+      const id = (c.el as any).__id as string;
+      const ov = this.overrides.virtual && this.overrides.virtual[id];
+      const { w, h } = controlSize(c.def);
+      return {
+        id, type: c.def.type, place: c.def.place || 'bottom-left', w, h,
+        pos: c.def.pos, offset: c.def.offset,
+        override: ov && ov.x != null && ov.y != null ? { x: ov.x, y: ov.y } : undefined,
+      };
     });
-
-    // Buttons cluster inset past any stick, stacked along the vertical edge using
-    // CUMULATIVE real heights + a min gap, so different-sized buttons never
-    // overlap. Wrap into a new inward column when the stack gets tall.
-    const limit = (typeof window !== 'undefined' ? window.innerHeight : 800) - m;
-    let colOffset = sticks.length ? reserve : m;
-    let along = m, colWidth = 0, count = 0;
-    for (const c of buttons) {
-      const bw = c.def.width || c.def.size || 72;
-      const bh = c.def.height || c.def.size || 72;
-      if (count > 0 && (count >= 3 || along + bh > limit)) {   // new column
-        colOffset += colWidth + gap; along = m; colWidth = 0; count = 0;
-      }
-      const st = c.el.style; clearPos(c.el);
-      (st as any)[vEdge] = along + 'px';
-      if (midX) { st.left = '50%'; st.transform = 'translateX(-50%)'; }
-      else { (st as any)[hEdge] = colOffset + 'px'; }
-      along += bh + gap; colWidth = Math.max(colWidth, bw); count += 1;
+    const boxes = layoutControls(items, vw, vh, { insets, safe });
+    for (const c of this.controls) {
+      const b = boxes[(c.el as any).__id]; if (!b) continue;
+      clearPos(c.el); c.el.style.left = b.x + 'px'; c.el.style.top = b.y + 'px';
     }
+  }
+
+  private gameInsets: Partial<Insets> = {};
+  private raceHud = { top: 0, bottom: 0 };
+  private overrides: InputOverrides = {};
+  private safeProbe: HTMLDivElement | null = null;
+
+  /** The device safe-area insets (notch, home bar), via a probe element. */
+  private readSafeArea(): Insets {
+    try {
+      if (!this.safeProbe) {
+        const p = document.createElement('div'); p.className = 'safe-probe';
+        this.root.appendChild(p); this.safeProbe = p;
+      }
+      const cs = getComputedStyle(this.safeProbe);
+      return { top: parseFloat(cs.paddingTop) || 0, right: parseFloat(cs.paddingRight) || 0,
+        bottom: parseFloat(cs.paddingBottom) || 0, left: parseFloat(cs.paddingLeft) || 0 };
+    } catch { return { top: 0, right: 0, bottom: 0, left: 0 }; }
   }
 
   // ---- highlight ring ----
@@ -366,6 +365,7 @@ export class Overlay {
           <button class="btn done">Done</button>
         </div>
         <p class="hint"></p>
+        <div class="edit-bar"><span>Drag a control to move it</span><button class="btn editdone">Done</button></div>
       </div>`;
     this.root.appendChild(p); this.panelEl = p;
     const showv = p.querySelector('.showv') as HTMLInputElement;
@@ -374,6 +374,7 @@ export class Overlay {
     p.querySelector('.editlayout')!.addEventListener('click', () => { this.setEditMode(!this.editMode, sys); });
     p.querySelector('.reset')!.addEventListener('click', () => { sys.resetControls(); this.closeControls(); });
     p.querySelector('.done')!.addEventListener('click', () => { this.setEditMode(false, sys); this.closeControls(); });
+    p.querySelector('.editdone')!.addEventListener('click', () => { this.setEditMode(false, sys); });
     p.querySelectorAll('.rb').forEach((b) => b.addEventListener('click', () => this.captureRebind((b as HTMLElement).dataset.i!, sys, p)));
   }
   private closeControls(): void { if (this.panelEl) { this.panelEl.remove(); this.panelEl = null; } }
@@ -408,14 +409,21 @@ export class Overlay {
     sys.setVirtualEditing(on);
   }
   private bindEditDrag(id: string, el: HTMLElement): void {
-    let dragging = false; let sx = 0, sy = 0;
-    const start = (px: number, py: number) => { if (!this.editMode) return; dragging = true; sx = px; sy = py; };
-    const move = (px: number, py: number, sysRef?: any) => {
+    // The control keeps its grab point under the finger and stays fully
+    // on-screen; the saved spot is its top-left corner as % of the viewport.
+    let dragging = false; let gx = 0, gy = 0;
+    const start = (px: number, py: number) => {
+      if (!this.editMode) return; dragging = true;
+      const r = el.getBoundingClientRect(); gx = px - r.left; gy = py - r.top;
+      (el as any).__pos = null;
+    };
+    const move = (px: number, py: number) => {
       if (!dragging) return;
-      const xPct = Math.max(2, Math.min(96, (px / window.innerWidth) * 100));
-      const yPct = Math.max(2, Math.min(94, (py / window.innerHeight) * 100));
-      el.style.left = xPct + '%'; el.style.right = ''; el.style.top = yPct + '%'; el.style.bottom = ''; el.style.transform = '';
-      (el as any).__pos = { x: xPct, y: yPct };
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const x = Math.max(0, Math.min(vw - el.offsetWidth, px - gx));
+      const y = Math.max(0, Math.min(vh - el.offsetHeight, py - gy));
+      clearPos(el); el.style.left = x + 'px'; el.style.top = y + 'px';
+      (el as any).__pos = { x: (x / vw) * 100, y: (y / vh) * 100 };
     };
     el.addEventListener('mousedown', (e) => start(e.clientX, e.clientY));
     el.addEventListener('touchstart', (e) => { const t = e.changedTouches[0]; start(t.clientX, t.clientY); }, { passive: true });
@@ -427,6 +435,280 @@ export class Overlay {
     };
     window.addEventListener('mouseup', end); window.addEventListener('touchend', end);
   }
+}
+
+// ---- auto layout (pure: no DOM, unit-tested in test/unit/client-input-layout.test.mjs) ----
+
+/** One control as the layout engine sees it (its rendered px size). */
+export interface LayoutItem {
+  id: string;
+  type: VirtualDef['type'];
+  place: Anchor;
+  w: number;
+  h: number;
+  pos?: VirtualDef['pos'];
+  offset?: VirtualDef['offset'];
+  /** The player's dragged spot: the control's top-left corner as % of the viewport. */
+  override?: { x: number; y: number };
+}
+
+/** A placed control: top-left corner + size, in viewport px. */
+export interface LayoutBox { x: number; y: number; w: number; h: number; }
+
+export interface LayoutOptions {
+  /** Game insets (a HUD bar…): auto-placed controls keep clear of them. */
+  insets?: Partial<Insets>;
+  /** Device safe area (notch, home bar): every control stays inside it. */
+  safe?: Partial<Insets>;
+  /** Distance from the edges for auto-placed controls (default 22). */
+  margin?: number;
+  /** Space between auto-placed controls (default 14). */
+  gap?: number;
+}
+
+/** The rendered size of a control: buttons and taps draw a 2px border outside
+ *  their declared size; sticks draw theirs inside. */
+export function controlSize(def: Pick<VirtualDef, 'type' | 'size' | 'width' | 'height'>): { w: number; h: number } {
+  const base = def.size || (def.type === 'button' ? 72 : 130);
+  const border = isStickType(def.type) ? 0 : 4;
+  return { w: (def.width || base) + border, h: (def.height || base) + border };
+}
+
+function isStickType(t: VirtualDef['type']): boolean { return t === 'joystick' || t === 'dpad'; }
+
+interface Sides { h: 'left' | 'right' | 'mid'; v: 'top' | 'bottom' | 'mid'; }
+function anchorSides(a: Anchor): Sides {
+  return {
+    h: a.endsWith('left') ? 'left' : a.endsWith('right') ? 'right' : 'mid',
+    v: a.startsWith('top') ? 'top' : a.startsWith('bottom') ? 'bottom' : 'mid',
+  };
+}
+
+/** Do two boxes overlap (or come closer than `pad` px)? */
+export function boxesTouch(a: LayoutBox, b: LayoutBox, pad = 0): boolean {
+  return a.x < b.x + b.w + pad && b.x < a.x + a.w + pad && a.y < b.y + b.h + pad && b.y < a.y + a.h + pad;
+}
+
+function clampN(v: number, lo: number, hi: number): number { return Math.max(lo, Math.min(hi, v)); }
+
+/**
+ * Place every control for a `vw`×`vh` viewport. Returns each control's box.
+ *
+ * 1. A game `pos` is honoured as given. A player-dragged control keeps its
+ *    spot (as % of the viewport, re-clamped on-screen inside the safe area),
+ *    nudged to the nearest free spot if it would land on a stick.
+ * 2. Sticks sit in their anchor's corner, side by side inward.
+ * 3. Buttons cluster *beside* their corner's sticks, stacked in columns (the
+ *    classic layout). If any cluster doesn't fit (it would leave the safe area
+ *    or touch another control, e.g. two sticks + buttons on a narrow portrait
+ *    phone), every corner cluster that has sticks moves into rows *above*
+ *    (below, for top corners) its sticks instead, first-declared button
+ *    innermost. Any button that still collides moves to the nearest free spot.
+ *
+ * Auto-placed controls never overlap each other or a fixed control when there
+ * is room for them, and always stay inside the safe area minus the game insets.
+ */
+export function layoutControls(items: LayoutItem[], vw: number, vh: number, opts: LayoutOptions = {}): Record<string, LayoutBox> {
+  const m = opts.margin ?? 22, gap = opts.gap ?? 14, pad = 6;
+  const sa: Insets = { top: 0, right: 0, bottom: 0, left: 0, ...opts.safe };
+  const gi: Insets = { top: 0, right: 0, bottom: 0, left: 0, ...opts.insets };
+  // Auto-placed controls live inside [L,R]×[T,B].
+  const L = sa.left + gi.left + m, T = sa.top + gi.top + m;
+  const R = vw - sa.right - gi.right - m, B = vh - sa.bottom - gi.bottom - m;
+  const out: Record<string, LayoutBox> = {};
+  const placed: LayoutBox[] = [];            // obstacles (tap regions don't count)
+  const commit = (it: LayoutItem, b: LayoutBox) => { out[it.id] = b; if (it.type !== 'tap') placed.push(b); };
+  const inside = (b: LayoutBox) => b.x >= L - 0.5 && b.y >= T - 0.5 && b.x + b.w <= R + 0.5 && b.y + b.h <= B + 0.5;
+  const free = (b: LayoutBox, others: LayoutBox[] = placed) => !others.some((p) => boxesTouch(b, p, pad));
+  const off = (it: LayoutItem) => ({ x: (it.offset && it.offset.x) || 0, y: (it.offset && it.offset.y) || 0 });
+
+  // 1. Fixed spots. Player-dragged ones wait until the sticks are down (below).
+  const auto: LayoutItem[] = [];
+  const dragged: Array<{ it: LayoutItem; want: LayoutBox }> = [];
+  for (const it of items) {
+    const { w, h } = it;
+    if (it.override) {
+      dragged.push({ it, want: {
+        x: clampN((it.override.x / 100) * vw, sa.left, vw - sa.right - w),
+        y: clampN((it.override.y / 100) * vh, sa.top, vh - sa.bottom - h), w, h,
+      } });
+    } else if (it.pos) {
+      const p = it.pos, s = anchorSides(it.place);
+      const x = p.left != null ? p.left : p.right != null ? vw - p.right - w
+        : s.h === 'left' ? L : s.h === 'right' ? R - w : (vw - w) / 2;
+      const y = p.top != null ? p.top : p.bottom != null ? vh - p.bottom - h
+        : s.v === 'top' ? T : s.v === 'bottom' ? B - h : (vh - h) / 2;
+      commit(it, { x: clampN(x, 0, vw - w), y: clampN(y, 0, vh - h), w, h });
+    } else auto.push(it);
+  }
+
+  const anchors = new Map<Anchor, LayoutItem[]>();
+  for (const it of auto) {
+    const a = it.place || 'bottom-left';
+    if (!anchors.has(a)) anchors.set(a, []);
+    anchors.get(a)!.push(it);
+  }
+
+  // 2. Sticks in their corner, side by side inward.
+  const sticksOf = new Map<Anchor, { span: LayoutBox | null; reserve: number }>();
+  for (const [a, list] of anchors) {
+    const s = anchorSides(a);
+    let reserve = 0; let span: LayoutBox | null = null;
+    for (const it of list) {
+      if (!isStickType(it.type)) continue;
+      const o = off(it);
+      const x = s.h === 'left' ? L + reserve + o.x : s.h === 'right' ? R - reserve - it.w - o.x : (vw - it.w) / 2 + o.x;
+      const y = s.v === 'top' ? T + o.y : s.v === 'bottom' ? B - it.h - o.y : (vh - it.h) / 2 + o.y;
+      const b = { x, y, w: it.w, h: it.h };
+      commit(it, b);
+      span = span ? unionBox(span, b) : { ...b };
+      reserve += it.w + gap;
+    }
+    sticksOf.set(a, { span, reserve });
+  }
+  // A dragged control keeps its spot unless that now lands on a stick or
+  // another fixed control (e.g. after a rotation): then it moves to the
+  // nearest free spot on-screen.
+  for (const { it, want } of dragged) {
+    if (it.type === 'tap' || free(want)) { commit(it, want); continue; }
+    commit(it, nearestFree(want, sa.left, sa.top, vw - sa.right, vh - sa.bottom, (b) => free(b)) || want);
+  }
+
+  // 3a. The classic cluster for every anchor's buttons.
+  const primary = new Map<string, LayoutBox>();
+  for (const [a, list] of anchors) {
+    const btns = list.filter((it) => !isStickType(it.type));
+    if (btns.length) clusterBeside(btns, anchorSides(a), sticksOf.get(a)!, primary);
+  }
+  // Does every cluster fit? (inside the safe area, clear of sticks, fixed
+  // controls and the other buttons)
+  const primBoxes = auto.filter((it) => !isStickType(it.type) && it.type !== 'tap').map((it) => primary.get(it.id)!);
+  const compact = auto.some((it) => {
+    if (isStickType(it.type) || it.type === 'tap') return false;
+    const b = primary.get(it.id)!;
+    return !inside(b) || !free(b) || !free(b, primBoxes.filter((p) => p !== b));
+  });
+
+  // 3b. Commit: classic spots, or rows over the sticks in compact mode. Taps
+  // keep their spot (they're invisible hit regions, meant to overlap).
+  const lost: Array<{ it: LayoutItem; want: LayoutBox }> = [];
+  for (const [a, list] of anchors) {
+    const btns = list.filter((it) => !isStickType(it.type));
+    if (!btns.length) continue;
+    const s = anchorSides(a), st = sticksOf.get(a)!;
+    const rows = compact && st.span && s.h !== 'mid' && s.v !== 'mid'
+      ? rowsBeyondSticks(btns.filter((it) => it.type !== 'tap'), s, st.span) : null;
+    for (const it of btns) {
+      const want = (rows && rows.get(it.id)) || primary.get(it.id)!;
+      if (it.type === 'tap' || (inside(want) && free(want))) commit(it, want);
+      else lost.push({ it, want });
+    }
+  }
+  // 3c. Anything still colliding goes to the nearest free spot.
+  for (const { it, want } of lost) commit(it, nearestFree(want, L, T, R, B, (b) => free(b)) || clampBox(want, L, T, R, B));
+  return out;
+
+  /** Columns beside the corner's sticks (or a centred row for top/bottom). */
+  function clusterBeside(btns: LayoutItem[], s: Sides, st: { span: LayoutBox | null; reserve: number }, into: Map<string, LayoutBox>): void {
+    const availH = B - T, availW = R - L;
+    if (s.h === 'mid') {
+      // Centred rows along the edge (past a stick sharing the anchor).
+      const rows: LayoutItem[][] = []; let cur: LayoutItem[] = [], curW = 0;
+      for (const it of btns) {
+        const w = cur.length ? curW + gap + it.w : it.w;
+        if (cur.length && w > availW) { rows.push(cur); cur = [it]; curW = it.w; } else { cur.push(it); curW = w; }
+      }
+      if (cur.length) rows.push(cur);
+      const rowH = rows.map((r) => Math.max(...r.map((it) => it.h)));
+      const totalH = rowH.reduce((n, h) => n + h, 0) + gap * (rows.length - 1);
+      let along = st.span ? st.span.h + gap : 0;
+      rows.forEach((row, i) => {
+        const rowW = row.reduce((n, it) => n + it.w, 0) + gap * (row.length - 1);
+        let x = (vw - rowW) / 2;
+        for (const it of row) {
+          const o = off(it);
+          const cy = s.v === 'top' ? T + along + rowH[i] / 2 + o.y : s.v === 'bottom' ? B - along - rowH[i] / 2 - o.y
+            : (vh - totalH) / 2 + along + rowH[i] / 2 + o.y;
+          into.set(it.id, { x: x + o.x, y: cy - it.h / 2, w: it.w, h: it.h });
+          x += it.w + gap;
+        }
+        along += rowH[i] + gap;
+      });
+      return;
+    }
+    // Columns inset past any stick, stacked along the vertical edge with
+    // cumulative real heights; a new inward column after 3 or when too tall.
+    let col = st.span ? st.reserve : 0, along = 0, colW = 0, count = 0, colIdx = 0;
+    const cells: Array<{ it: LayoutItem; col: number; along: number; colIdx: number }> = [];
+    const colH: number[] = [];
+    for (const it of btns) {
+      if (count > 0 && (count >= 3 || along + it.h > availH)) { col += colW + gap; along = 0; colW = 0; count = 0; colIdx += 1; }
+      cells.push({ it, col, along, colIdx });
+      colH[colIdx] = along + it.h;
+      along += it.h + gap; colW = Math.max(colW, it.w); count += 1;
+    }
+    for (const c of cells) {
+      const { it } = c, o = off(it);
+      const x = s.h === 'left' ? L + c.col + o.x : R - c.col - it.w - o.x;
+      const y = s.v === 'top' ? T + c.along + o.y : s.v === 'bottom' ? B - c.along - it.h - o.y
+        : (vh - colH[c.colIdx]) / 2 + c.along + o.y;
+      into.set(it.id, { x, y, w: it.w, h: it.h });
+    }
+  }
+
+  /** Rows just past the corner's sticks (above them for bottom corners),
+   *  first-declared button innermost, each row at most half the screen wide. */
+  function rowsBeyondSticks(btns: LayoutItem[], s: Sides, span: LayoutBox): Map<string, LayoutBox> {
+    const res = new Map<string, LayoutBox>();
+    const maxW = s.h === 'left' ? vw / 2 - gap / 2 - L : R - (vw / 2 + gap / 2);
+    const rows: LayoutItem[][] = []; let cur: LayoutItem[] = [], curW = 0;
+    for (const it of btns) {
+      const w = cur.length ? curW + gap + it.w : it.w;
+      if (cur.length && w > maxW) { rows.push(cur); cur = [it]; curW = it.w; } else { cur.push(it); curW = w; }
+    }
+    if (cur.length) rows.push(cur);
+    let along = 0;
+    for (const row of rows) {
+      const rowW = row.reduce((n, it) => n + it.w, 0) + gap * (row.length - 1);
+      const rowH = Math.max(...row.map((it) => it.h));
+      // Flush with the sticks' inner edge when the row fits over them, else
+      // from the outer edge inward.
+      let x = s.h === 'left'
+        ? (rowW <= span.w ? span.x + span.w - rowW : L)
+        : (rowW <= span.w ? span.x : R - rowW);
+      const ordered = s.h === 'left' ? [...row].reverse() : row;   // innermost = first declared
+      for (const it of ordered) {
+        const o = off(it);
+        const cy = s.v === 'bottom' ? span.y - gap - along - rowH / 2 - o.y : span.y + span.h + gap + along + rowH / 2 + o.y;
+        res.set(it.id, { x: x + (s.h === 'left' ? o.x : -o.x), y: cy - it.h / 2, w: it.w, h: it.h });
+        x += it.w + gap;
+      }
+      along += rowH + gap;
+    }
+    return res;
+  }
+}
+
+function unionBox(a: LayoutBox, b: LayoutBox): LayoutBox {
+  const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+}
+function clampBox(b: LayoutBox, L: number, T: number, R: number, B: number): LayoutBox {
+  return { ...b, x: clampN(b.x, L, R - b.w), y: clampN(b.y, T, B - b.h) };
+}
+/** The free spot (inside [L,R]×[T,B]) closest to `want`, on a 4px grid. */
+function nearestFree(want: LayoutBox, L: number, T: number, R: number, B: number, ok: (b: LayoutBox) => boolean): LayoutBox | null {
+  let best: LayoutBox | null = null, bestD = Infinity;
+  const step = 4;
+  for (let y = T; y <= B - want.h + 0.01; y += step) {
+    for (let x = L; x <= R - want.w + 0.01; x += step) {
+      const d = (x - want.x) ** 2 + (y - want.y) ** 2;
+      if (d >= bestD) continue;
+      const b = { x, y, w: want.w, h: want.h };
+      if (ok(b)) { best = b; bestD = d; }
+    }
+  }
+  return best;
 }
 
 function bindingLabel(sys: any, name: string): string {
@@ -455,6 +737,16 @@ const CSS = `
 .vc-joystick .base, .vc-dpad .base { position: absolute; inset: 0; background: var(--vc-bg, rgba(20,22,30,.4)); border: 2px solid var(--vc-color); }
 .vc-joystick .knob, .vc-dpad .knob { position: absolute; width: 44%; height: 44%; border-radius: 50%; background: var(--vc-color); opacity: .9; }
 :host(.editing) .vc { outline: 2px dashed #38d6ff; cursor: move; }
+/* While editing the layout the panel shrinks to a small bar at the top so the
+   controls underneath can be dragged. */
+.edit-bar { display: none; }
+:host(.editing) .panel { background: transparent; pointer-events: none; place-items: start center; }
+:host(.editing) .panel-card { pointer-events: auto; width: auto; margin-top: max(10px, env(safe-area-inset-top, 0px)); padding: 8px 10px; }
+:host(.editing) .panel-card > :not(.edit-bar) { display: none; }
+:host(.editing) .edit-bar { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+:host(.editing) .edit-bar .btn { margin: 0; }
+.safe-probe { position: fixed; left: 0; top: 0; width: 0; height: 0; visibility: hidden; pointer-events: none;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
 .ring { position: fixed; pointer-events: none; z-index: 2147483200; border: 3px solid ${ACCENT}; border-radius: 8px;
         box-shadow: 0 0 0 2px rgba(0,0,0,.4); transition: left .08s, top .08s, width .08s, height .08s; }
 .ring[hidden] { display: none; }

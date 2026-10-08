@@ -79,6 +79,12 @@ export interface VirtualDef {
   /** Explicit pixel position from the viewport edges — bypasses anchor auto-
    *  layout for this control (e.g. pin a pause button just above a stick). */
   pos?: { left?: number; right?: number; top?: number; bottom?: number };
+  /** Nudge an auto-placed control away from its anchor's edges, in px: `x`
+   *  moves it inward from the left/right edge (right for top/bottom/center
+   *  anchors), `y` away from the top/bottom edge (down for left/right/center).
+   *  E.g. `{ y: 60 }` on a top-right button clears a 60px HUD bar. For a
+   *  page-wide band every control should avoid, use `hub.input.setInsets`. */
+  offset?: { x?: number; y?: number };
   size?: number;              // px (joystick/button diameter; or width if w/h given)
   width?: number;             // px — overrides size for width (non-square controls)
   height?: number;            // px — overrides size for height
@@ -354,6 +360,14 @@ export class InputSystem {
    *  saved toggle still wins). Use `false` to hide controls for a game that
    *  doesn't need them. `null` = auto (shown on touch devices without a pad). */
   setVirtualDefault(v: boolean | null): void { this.virtualDefault = v; this.syncVirtualVisibility(); }
+  /** Keep auto-placed virtual controls clear of a band along a screen edge,
+   *  e.g. your top HUD bar: `setInsets({ top: hud.getBoundingClientRect().bottom })`.
+   *  Px from each edge; merged with earlier calls (pass 0 to clear one edge).
+   *  Applies on top of the device safe area. Player-dragged controls and
+   *  explicit `pos` ignore it. Re-layout happens immediately. */
+  setInsets(insets: { top?: number; right?: number; bottom?: number; left?: number }): void {
+    this.ensureOverlay(); this.overlay!.setInsets(insets);
+  }
   /** The player-facing on/off state of the on-screen controls — what the
    *  "Show on-screen controls" toggle reflects. An explicit choice wins; the
    *  default is on for touch devices when no gamepad is active. Excludes the
