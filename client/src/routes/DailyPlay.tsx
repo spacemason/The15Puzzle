@@ -25,7 +25,8 @@ function mulberry32(a: number): () => number {
 // Reuse the same 'play' input group as the normal play screen (keyboard / d-pad
 // / gamepad slide the blank). Guarded so repeated mounts don't redefine.
 let dailyInputReady = false;
-function ensureDailyInput(): void {
+/** Also used by the race board (routes/Race.tsx): same controls. */
+export function ensureDailyInput(): void {
   if (dailyInputReady) return;
   dailyInputReady = true;
   hub.input.define({

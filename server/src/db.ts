@@ -3,7 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.resolve(__dirname, "..", "data.db");
+// P15_DB_PATH lets tests (tests/hub) run against a throwaway database.
+const dbPath = process.env.P15_DB_PATH || path.resolve(__dirname, "..", "data.db");
 
 export const db = new DatabaseSync(dbPath);
 db.exec("PRAGMA journal_mode = WAL");

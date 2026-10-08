@@ -12,6 +12,8 @@ import { LandingPage } from "./routes/Landing";
 import { PuzzleListPage } from "./routes/PuzzleList";
 import { PlayPage } from "./routes/Play";
 import { CreatePage } from "./routes/Create";
+import { RacePage } from "./routes/Race";
+import { initRace } from "./race";
 
 export function App() {
   const { user, loading } = useAuth();
@@ -33,6 +35,13 @@ export function App() {
     void hub.ensureGuest().catch(() => {}).then(() => {
       hub.daily.define({ play: () => nav("/daily") });
     });
+    // Races: the hub starts/ends races on the Race screen. A race invite or a
+    // friend's Join opens /the15puzzle/?race=lobby&hub_launch=… — go to the
+    // Race screen keeping the query, so the hub can still read its launch token.
+    initRace(() => nav("/race"));
+    if (new URLSearchParams(window.location.search).has("race")) {
+      nav({ pathname: "/race", search: window.location.search }, { replace: true });
+    }
   }, [nav]);
 
   return (
@@ -75,6 +84,7 @@ export function App() {
               }
             />
             <Route path="/daily" element={<DailyPlay />} />
+            <Route path="/race" element={<RacePage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         )}

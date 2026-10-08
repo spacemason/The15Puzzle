@@ -12,7 +12,8 @@
     "dev:server": "npm run dev -w server",
     "dev:client": "npm run dev -w client",
     "build": "npm run build -w shared && npm run build -w server && npm run build -w client",
-    "start": "npm run start -w server"
+    "start": "npm run start -w server",
+    "test:hub": "node --test \"tests/hub/*.test.mjs\""
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
@@ -31,6 +32,18 @@
     ],
     "build": "npm run build",
     "start": "npm run start",
-    "image": "cover.png"
+    "image": "cover.png",
+    "changes": [
+      "New: Race a friend! Tap Race, pick Easy, Medium or Hard, and you both get the same scramble. First to solve it wins."
+    ],
+    "race": {
+      "players": [2, 2],
+      "params": [
+        { "key": "scramble", "title": "Scramble", "default": 60,
+          "options": [{ "value": 25, "title": "Easy" }, { "value": 60, "title": "Medium" }, { "value": 150, "title": "Hard" }] }
+      ],
+      "stats": [{ "key": "moves", "title": "Moves" }, { "key": "placed", "title": "Placed" }],
+      "minMs": 3000
+    }
   }
 }

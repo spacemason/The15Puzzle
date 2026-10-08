@@ -92,6 +92,9 @@ export function LandingPage() {
           <Link to="/puzzles" className="btn btn-primary big-play">
             ▶ Play
           </Link>
+          <Link to="/race" className="btn big-play race-cta" data-testid="race-button">
+            🏁 Race
+          </Link>
         </motion.div>
       </section>
     </div>
