@@ -496,7 +496,8 @@ function clampN(v: number, lo: number, hi: number): number { return Math.max(lo,
  *
  * 1. A game `pos` is honoured as given. A player-dragged control keeps its
  *    spot (as % of the viewport, re-clamped on-screen inside the safe area),
- *    nudged to the nearest free spot if it would land on a stick.
+ *    nudged to the nearest free spot if it would land on (or within `gap` of)
+ *    a stick's full box.
  * 2. Sticks sit in their anchor's corner, side by side inward.
  * 3. Buttons cluster *beside* their corner's sticks, stacked in columns (the
  *    classic layout). If any cluster doesn't fit (it would leave the safe area
@@ -516,10 +517,18 @@ export function layoutControls(items: LayoutItem[], vw: number, vh: number, opts
   const L = sa.left + gi.left + m, T = sa.top + gi.top + m;
   const R = vw - sa.right - gi.right - m, B = vh - sa.bottom - gi.bottom - m;
   const out: Record<string, LayoutBox> = {};
-  const placed: LayoutBox[] = [];            // obstacles (tap regions don't count)
-  const commit = (it: LayoutItem, b: LayoutBox) => { out[it.id] = b; if (it.type !== 'tap') placed.push(b); };
+  // Obstacles (tap regions don't count). A stick's whole box is its touch
+  // area, so everything keeps a full `gap` from it (a thumb on the rim must not
+  // catch a button); other controls just must not touch (`pad`).
+  const placed: LayoutBox[] = [];
+  const stickBoxes = new Set<LayoutBox>();
+  const commit = (it: LayoutItem, b: LayoutBox) => {
+    out[it.id] = b; if (it.type === 'tap') return;
+    placed.push(b); if (isStickType(it.type)) stickBoxes.add(b);
+  };
   const inside = (b: LayoutBox) => b.x >= L - 0.5 && b.y >= T - 0.5 && b.x + b.w <= R + 0.5 && b.y + b.h <= B + 0.5;
-  const free = (b: LayoutBox, others: LayoutBox[] = placed) => !others.some((p) => boxesTouch(b, p, pad));
+  const free = (b: LayoutBox, others: LayoutBox[] = placed) =>
+    !others.some((p) => boxesTouch(b, p, stickBoxes.has(p) ? gap : pad));
   const off = (it: LayoutItem) => ({ x: (it.offset && it.offset.x) || 0, y: (it.offset && it.offset.y) || 0 });
 
   // 1. Fixed spots. Player-dragged ones wait until the sticks are down (below).
