@@ -1,5 +1,5 @@
 # Auto-deploy on push — SSHes into the diffenderfer.games host, pulls, installs,
-# and restarts the catalog (which rebuilds this game). It only runs when the
+# and asks the host to rebuild only this game. It only runs when the
 # deploy secrets are configured, so a freshly-cloned game (no secrets) just
 # skips deploy instead of failing.
 #
@@ -52,5 +52,8 @@ jobs:
             git reset --hard "origin/$(git symbolic-ref --short HEAD)"
             npm install --no-audit --no-fund
             rm -f .diffenderfer-build-cache
-            systemctl restart diffenderfer-games
+            # Rebuild and restart only this game on dg-host (loopback only; blocks until built, up to 10 min).
+            # Prints the JSON report; a non-2xx answer (500 = broken, 503 = host still booting) fails the deploy.
+            # Fallback if ever needed: systemctl restart diffenderfer-games (the compat shim: restarts dg-host + dg-hub, ~15 s for every game).
+            curl --fail-with-body -sS -X POST --max-time 600 "http://127.0.0.1:8080/_host/rebuild/the15puzzle"; echo
             echo "deployed $(git rev-parse --short HEAD)"
